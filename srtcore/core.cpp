@@ -10458,19 +10458,29 @@ int srt::CUDT::processData(CUnit* in_unit)
     if (m_bPeerRexmitFlag && was_sent_in_order)
     {
         ++m_iConsecOrderedDelivery;
-        if (m_iConsecOrderedDelivery >= 50)
-        {
-            m_iConsecOrderedDelivery = 0;
-            if (m_iReorderTolerance > 0)
-            {
-                m_iReorderTolerance--;
-                enterCS(m_StatsLock);
-                m_stats.traceReorderDistance--;
-                leaveCS(m_StatsLock);
-                HLOGC(qrlog.Debug, log << "ORDERED DELIVERY of 50 packets in a row - decreasing tolerance to "
-                        << m_iReorderTolerance);
-            }
-        }
+
+        // DISABLED FOR BELABOX
+        // See: https://github.com/BELABOX/srt/commit/453fae978f54430d64c20683657bf0f2f3da2eb4
+        // Use SRTO_LOSSMAXTTL as the fixed reodering TTL value
+        // Normally the TTL is adjusted up and down depending on how far
+        // packages arrive out of order. However this causes spurious
+        // retransmissions over srtla as out-of-order delivery is to be
+        // expected, but the TTL can ocasionally become 0 / too low as traffic
+        // is dynamically balanced over multiple links
+
+        // if (m_iConsecOrderedDelivery >= 50)
+        // {
+        //     m_iConsecOrderedDelivery = 0;
+        //     if (m_iReorderTolerance > 0)
+        //     {
+        //         m_iReorderTolerance--;
+        //         enterCS(m_StatsLock);
+        //         m_stats.traceReorderDistance--;
+        //         leaveCS(m_StatsLock);
+        //         HLOGC(qrlog.Debug, log << "ORDERED DELIVERY of 50 packets in a row - decreasing tolerance to "
+        //                 << m_iReorderTolerance);
+        //     }
+        // }
     }
 
     return 0;
@@ -10620,20 +10630,29 @@ void srt::CUDT::unlose(const CPacket &packet)
             ++m_iConsecEarlyDelivery; // otherwise, and if it arrived quite earlier, increase counter
             HLOGC(qrlog.Debug, log << "... arrived at TTL " << had_ttl << " case " << m_iConsecEarlyDelivery);
 
+            // DISABLED FOR BELABOX
+            // See: https://github.com/BELABOX/srt/commit/453fae978f54430d64c20683657bf0f2f3da2eb4
+            // Use SRTO_LOSSMAXTTL as the fixed reodering TTL value
+            // Normally the TTL is adjusted up and down depending on how far
+            // packages arrive out of order. However this causes spurious
+            // retransmissions over srtla as out-of-order delivery is to be
+            // expected, but the TTL can ocasionally become 0 / too low as
+            // traffic is dynamically balanced over multiple links
+
             // After 10 consecutive
-            if (m_iConsecEarlyDelivery >= 10)
-            {
-                m_iConsecEarlyDelivery = 0;
-                if (m_iReorderTolerance > 0)
-                {
-                    m_iReorderTolerance--;
-                    enterCS(m_StatsLock);
-                    m_stats.traceReorderDistance--;
-                    leaveCS(m_StatsLock);
-                    HLOGC(qrlog.Debug, log << "... reached " << m_iConsecEarlyDelivery
-                            << " times - decreasing tolerance to " << m_iReorderTolerance);
-                }
-            }
+            // if (m_iConsecEarlyDelivery >= 10)
+            // {
+            //     m_iConsecEarlyDelivery = 0;
+            //     if (m_iReorderTolerance > 0)
+            //     {
+            //         m_iReorderTolerance--;
+            //         enterCS(m_StatsLock);
+            //         m_stats.traceReorderDistance--;
+            //         leaveCS(m_StatsLock);
+            //         HLOGC(qrlog.Debug, log << "... reached " << m_iConsecEarlyDelivery
+            //                 << " times - decreasing tolerance to " << m_iReorderTolerance);
+            //     }
+            // }
         }
         // If hasn't increased tolerance, but the packet appeared at TTL less than 2, do nothing.
     }
@@ -11205,7 +11224,15 @@ int srt::CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
         if (currtime <= m_tsNextNAKTime.load())
             return BECAUSE_NO_REASON; // wait for next NAK time
 
-        sendCtrl(UMSG_LOSSREPORT);
+        // DISABLED FOR BELABOX
+        // See: https://github.com/BELABOX/srt/commit/b431c7728fc28e8d2091d367c8457ea2d2fe6c2c
+        // Disable periodic NAK reports
+        // The commented out code sends periodic NAKs even for packets which are
+        // within their retransmission window as set with SRTO_LOSSMAXTTL. This
+        // would result in spurious retransmissions and affect load balancing
+        // when using srtla
+
+        // sendCtrl(UMSG_LOSSREPORT); // periodic retransmissions
         debug_decision = BECAUSE_NAKREPORT;
     }
 
