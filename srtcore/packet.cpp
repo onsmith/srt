@@ -159,7 +159,7 @@ modified by
 //      the original sequence numbers in the field.
 
 #include "platform_sys.h"
-
+#include <cstddef>
 #include <cstring>
 #include "packet.h"
 #include "handshake.h"
@@ -179,10 +179,6 @@ CPacket::CPacket()
     : m_nHeader() // Silences GCC 12 warning "used uninitialized".
     , m_extra_pad()
     , m_data_owned(false)
-    , m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO]))
-    , m_iMsgNo((int32_t&)(m_nHeader[SRT_PH_MSGNO]))
-    , m_iTimeStamp((int32_t&)(m_nHeader[SRT_PH_TIMESTAMP]))
-    , m_iID((int32_t&)(m_nHeader[SRT_PH_ID]))
     , m_pcData((char*&)(m_PacketVector[PV_DATA].dataRef()))
 {
     m_nHeader.clear();
@@ -221,6 +217,7 @@ void CPacket::deallocate()
     if (m_data_owned)
         delete[](char*) m_PacketVector[PV_DATA].data();
     m_PacketVector[PV_DATA].set(NULL, 0);
+    m_data_owned = false;
 }
 
 char* CPacket::release()
@@ -241,8 +238,7 @@ CPacket::~CPacket()
 {
     // PV_HEADER is always owned, PV_DATA may use a "borrowed" buffer.
     // Delete the internal buffer only if it was declared as owned.
-    if (m_data_owned)
-        delete[](char*) m_PacketVector[PV_DATA].data();
+    deallocate();
 }
 
 size_t CPacket::getLength() const
@@ -561,10 +557,9 @@ CPacket* CPacket::clone() const
 {
     CPacket* pkt = new CPacket;
     memcpy((pkt->m_nHeader), m_nHeader, HDR_SIZE);
-    pkt->m_pcData = new char[m_PacketVector[PV_DATA].size()];
-    memcpy((pkt->m_pcData), m_pcData, m_PacketVector[PV_DATA].size());
-    pkt->m_PacketVector[PV_DATA].setLength(m_PacketVector[PV_DATA].size());
-
+    pkt->allocate(this->getLength());
+    SRT_ASSERT(this->getLength() == pkt->getLength());
+    memcpy((pkt->m_pcData), m_pcData, this->getLength());
     pkt->m_DestAddr = m_DestAddr;
 
     return pkt;
@@ -602,7 +597,7 @@ inline void SprintSpecialWord(std::ostream& os, int32_t val)
 std::string CPacket::Info()
 {
     std::ostringstream os;
-    os << "TARGET=@" << m_iID << " ";
+    os << "TARGET=@" << id() << " ";
 
     if (isControl())
     {
