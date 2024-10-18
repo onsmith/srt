@@ -349,6 +349,14 @@ TEST(Bonding, Options)
     string pass = "longenoughpassword";
     // passphrase should be ok.
     EXPECT_NE(srt_setsockflag(grp, SRTO_PASSPHRASE, pass.c_str(), pass.size()), SRT_ERROR);
+
+    uint32_t val = 16;
+    EXPECT_NE(srt_setsockflag(grp, SRTO_PBKEYLEN, &val, sizeof val), SRT_ERROR);
+
+#ifdef ENABLE_AEAD_API_PREVIEW
+    val = 1;
+    EXPECT_NE(srt_setsockflag(grp, SRTO_CRYPTOMODE, &val, sizeof val), SRT_ERROR);
+#endif
 #endif
 
     int lat = 500;
@@ -421,14 +429,14 @@ TEST(Bonding, Options)
     int revlat = -1;
     int optsize = sizeof revlat;
     EXPECT_NE(srt_getsockflag(grp, SRTO_RCVLATENCY, &revlat, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof revlat);
+    EXPECT_EQ(optsize, (int) sizeof revlat);
     EXPECT_EQ(revlat, 500);
 
     revlat = -1;
     optsize = sizeof revlat;
     // Expect the same value set on the member socket
     EXPECT_NE(srt_getsockflag(member, SRTO_RCVLATENCY, &revlat, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof revlat);
+    EXPECT_EQ(optsize, (int) sizeof revlat);
     EXPECT_EQ(revlat, 500);
 
     // Individual socket option modified on group
@@ -443,8 +451,27 @@ TEST(Bonding, Options)
 
     // But getting the option value should be equal to the group setting
     EXPECT_NE(srt_getsockflag(grp, SRTO_OHEADBW, &ohead, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof ohead);
+    EXPECT_EQ(optsize, (int) sizeof ohead);
     EXPECT_EQ(ohead, 12);
+
+#if SRT_ENABLE_ENCRYPTION
+
+    uint32_t kms = -1;
+
+    EXPECT_NE(srt_getsockflag(grp, SRTO_KMSTATE, &kms, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, (int) sizeof kms);
+    EXPECT_EQ(kms, int(SRT_KM_S_SECURED));
+
+    EXPECT_NE(srt_getsockflag(grp, SRTO_PBKEYLEN, &kms, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, (int) sizeof kms);
+    EXPECT_EQ(kms, 16);
+
+#ifdef ENABLE_AEAD_API_PREVIEW
+    EXPECT_NE(srt_getsockflag(grp, SRTO_CRYPTOMODE, &kms, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, sizeof kms);
+    EXPECT_EQ(kms, 1);
+#endif
+#endif
 
     // We're done, the thread can close connection and exit
     {
@@ -455,5 +482,85 @@ TEST(Bonding, Options)
 
     accept_and_close.join();
     srt_close(grp);
+}
+
+inline SRT_SOCKGROUPCONFIG PrepareEndpoint(const std::string& host, int port)
+{
+    srt::sockaddr_any sa = srt::CreateAddr(host, port, AF_INET);
+    return srt_prepare_endpoint(NULL, sa.get(), sa.size());
+}
+
+// This test will create a listener and then the group that should
+// connect members, where the first one fail, and two next should
+// succeed. Then sends a single packet over that link and makes sure
+// it's properly received, then the second packet isn't read.
+TEST(Bonding, InitialFailure)
+{
+    using namespace std;
+    using namespace srt;
+
+    TestInit srtinit;
+    MAKE_UNIQUE_SOCK(lsn, "Listener", srt_create_socket());
+    MAKE_UNIQUE_SOCK(grp, "GrpCaller", srt_create_group(SRT_GTYPE_BROADCAST));
+
+    // Create the listener on port 5555.
+    int allow = 1;
+    ASSERT_NE(srt_setsockflag(lsn, SRTO_GROUPCONNECT, &allow, sizeof allow), SRT_ERROR);
+
+    sockaddr_any sa = CreateAddr("127.0.0.1", 5555, AF_INET);
+    ASSERT_NE(srt_bind(lsn, sa.get(), sa.size()), SRT_ERROR);
+    ASSERT_NE(srt_listen(lsn, 5), SRT_ERROR);
+
+    // Create a group
+    // Connect 3 members in the group.
+    std::vector<SRT_SOCKGROUPCONFIG> targets;
+    targets.push_back(PrepareEndpoint("127.0.0.1", 5556)); // NOTE: NONEXISTENT LISTENER
+    targets.push_back(PrepareEndpoint("127.0.0.1", 5555));
+    targets.push_back(PrepareEndpoint("127.0.0.1", 5555));
+
+    // This should block until the connection is established, but
+    // accepted socket should be spawned and just wait for extraction.
+    const SRTSOCKET conn = srt_connect_group(grp, targets.data(), (int)targets.size());
+    EXPECT_NE(conn, SRT_INVALID_SOCK);
+
+    // Now check if the accept is ready
+    sockaddr_any revsa;
+    const SRTSOCKET gs = srt_accept(lsn, revsa.get(), &revsa.len);
+    EXPECT_NE(gs, SRT_INVALID_SOCK);
+
+    // Make sure that it was the group accepted
+    EXPECT_EQ(gs & SRTGROUP_MASK, SRTGROUP_MASK);
+
+    // Set 1s reading timeout on the socket so that reading won't wait forever,
+    // as it should fail at the second reading.
+    int read_timeout = 500; // 0.5s
+    EXPECT_NE(srt_setsockflag(gs, SRTO_RCVTIMEO, &read_timeout, sizeof (read_timeout)), SRT_ERROR);
+
+    int lsn_isn = -1, lsn_isn_size = sizeof (int);
+    EXPECT_NE(srt_getsockflag(gs, SRTO_ISN, &lsn_isn, &lsn_isn_size), SRT_ERROR);
+
+    // Now send a packet
+
+    string packet_data = "PREDEFINED PACKET DATA";
+    EXPECT_NE(srt_send(grp, packet_data.data(), packet_data.size()), SRT_ERROR);
+
+    char outbuf[1316];
+    SRT_MSGCTRL mc = srt_msgctrl_default;
+    int recvlen = srt_recvmsg2(gs, outbuf, 1316, &mc);
+    EXPECT_EQ(recvlen, int(packet_data.size()));
+
+    if (recvlen > 0)
+    {
+        outbuf[recvlen] = 0;
+        EXPECT_EQ(outbuf, packet_data);
+    }
+    EXPECT_EQ(mc.pktseq, lsn_isn);
+
+    recvlen = srt_recv(gs, outbuf, 80);
+    EXPECT_EQ(recvlen, int(SRT_ERROR));
+
+    srt_close(gs);
+    srt_close(grp);
+    srt_close(lsn);
 }
 

@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.3)
+set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -38,7 +38,8 @@ string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "tvOS")
-					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS"))
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "visionOS"))
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
@@ -1382,7 +1383,6 @@ if (ENABLE_APPS)
 		# srt-multiplex temporarily blocked
 		#srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
 		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
-		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -1420,7 +1420,6 @@ if (ENABLE_APPS)
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
-		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
