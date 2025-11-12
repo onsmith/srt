@@ -1,6 +1,7 @@
 #include <vector>
 #include <algorithm>
 #include <future>
+#include <thread>
 
 #include "gtest/gtest.h"
 #include "test_env.h"
@@ -29,7 +30,6 @@ protected:
     TestFECRebuilding()
     {
         // Required to make ParseCorrectorConfig work
-        PacketFilter::globalInit();
     }
 
     void setup() override
@@ -91,7 +91,23 @@ protected:
     {
         delete fec;
     }
+
 };
+
+static std::future<int> spawn_connect(SRTSOCKET s, sockaddr_in& sa, int timeout_ms = 1000)
+{
+    std::cout << "[M] SPAWNING srt_connect()\n";
+    return std::async(std::launch::async, [s, &sa, timeout_ms]()
+        {
+            // Add a delay for starting connection to give a chance
+            // for the main thread to establish an EID with the listener
+            // BEFORE the handshake packet is received, otherwise the
+            // epoll will miss the signal (a bug fixed in 1.6.0).
+            std::this_thread::sleep_for(chrono::milliseconds(timeout_ms));
+            std::cout << "[T] RUNNING srt_connect()\n";
+            return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
+        });
+}
 
 namespace srt {
     class TestMockCUDT
@@ -303,9 +319,7 @@ TEST(TestFEC, Connection)
 
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
+    auto connect_res = spawn_connect(s, sa, 1);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
@@ -313,7 +327,7 @@ TEST(TestFEC, Connection)
     // Given 2s timeout for accepting as it has occasionally happened with Travis
     // that 1s might not be enough.
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -361,17 +375,18 @@ TEST(TestFEC, ConnectionReorder)
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
     ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1), -1);
 
+    int conntimeo = 10000;
+    ASSERT_NE(srt_setsockflag(s, SRTO_CONNTIMEO, &conntimeo, sizeof (conntimeo)), SRT_ERROR);
+
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
+    auto connect_res = spawn_connect(s, sa);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -421,15 +436,12 @@ TEST(TestFEC, ConnectionFull1)
 
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
-
+    auto connect_res = spawn_connect(s, sa);
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -479,15 +491,13 @@ TEST(TestFEC, ConnectionFull2)
 
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
+    auto connect_res = spawn_connect(s, sa);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -537,15 +547,13 @@ TEST(TestFEC, ConnectionMess)
 
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
+    auto connect_res = spawn_connect(s, sa);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR) << srt_getlasterror_str();
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -593,15 +601,13 @@ TEST(TestFEC, ConnectionForced)
 
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
+    auto connect_res = spawn_connect(s, sa);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -646,9 +652,7 @@ TEST(TestFEC, RejectionConflict)
 
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
+    auto connect_res = spawn_connect(s, sa);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
@@ -690,9 +694,7 @@ TEST(TestFEC, RejectionIncompleteEmpty)
 
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
+    auto connect_res = spawn_connect(s, sa);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
@@ -738,9 +740,7 @@ TEST(TestFEC, RejectionIncomplete)
 
     srt_listen(l, 1);
 
-    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
-        });
+    auto connect_res = spawn_connect(s, sa);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();

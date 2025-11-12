@@ -220,6 +220,11 @@ srt::CSndUList::~CSndUList()
     delete[] m_pHeap;
 }
 
+void srt::CSndUList::resetAtFork()
+{
+    resetCond(m_ListCond);
+}
+
 void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     ScopedLock listguard(m_ListLock);
@@ -415,6 +420,17 @@ srt::CSndQueue::CSndQueue()
 
 srt::CSndQueue::~CSndQueue()
 {
+    delete m_pSndUList;
+}
+
+void srt::CSndQueue::resetAtFork()
+{
+    resetThread(&m_WorkerThread);
+    m_pSndUList->resetAtFork();
+}
+
+void srt::CSndQueue::stop()
+{
     m_bClosing = true;
 
     if (m_pTimer != NULL)
@@ -430,8 +446,6 @@ srt::CSndQueue::~CSndQueue()
         HLOGC(rslog.Debug, log << "SndQueue: EXIT");
         m_WorkerThread.join();
     }
-
-    delete m_pSndUList;
 }
 
 int srt::CSndQueue::ioctlQuery(int type) const
@@ -1168,15 +1182,6 @@ srt::CRcvQueue::CRcvQueue()
 
 srt::CRcvQueue::~CRcvQueue()
 {
-    m_bClosing = true;
-
-    if (m_WorkerThread.joinable())
-    {
-        HLOGC(rslog.Debug, log << "RcvQueue: EXIT");
-        m_WorkerThread.join();
-    }
-    releaseCond(m_BufferCond);
-
     delete m_pUnitQueue;
     delete m_pRcvUList;
     delete m_pHash;
@@ -1193,6 +1198,24 @@ srt::CRcvQueue::~CRcvQueue()
         }
     }
 }
+
+void srt::CRcvQueue::resetAtFork()
+{
+    resetThread(&m_WorkerThread);
+}
+
+void srt::CRcvQueue::stop()
+{
+    m_bClosing = true;
+
+    if (m_WorkerThread.joinable())
+    {
+        HLOGC(rslog.Debug, log << "RcvQueue: EXIT");
+        m_WorkerThread.join();
+    }
+    releaseCond(m_BufferCond);
+}
+
 
 #if ENABLE_LOGGING
 srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
@@ -1429,7 +1452,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     bool have_listener = false;
     {
         SharedLock shl(m_pListener);
-        CUDT*      pListener = m_pListener.getPtrNoLock();
+        CUDT*      pListener = m_pListener.get_locked(shl);
 
         if (pListener)
         {
@@ -1720,17 +1743,25 @@ int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
     return (int)w_packet.getLength();
 }
 
-int srt::CRcvQueue::setListener(CUDT* u)
+bool srt::CRcvQueue::setListener(CUDT* u)
 {
-    if (!m_pListener.set(u))
-        return -1;
-
-    return 0;
+    return m_pListener.compare_exchange(NULL, u);
 }
 
-void srt::CRcvQueue::removeListener(const CUDT* u)
+srt::CUDT* srt::CRcvQueue::getListener()
 {
-    m_pListener.clearIf(u);
+    SharedLock lkl (m_pListener);
+    return m_pListener.get_locked(lkl);
+}
+
+// XXX NOTE: TSan reports here false positive against the call
+// to locateSocket in CUDTUnited::newConnection. This here will apply
+// exclusive lock on m_pListener, while keeping shared lock on
+// CUDTUnited::m_GlobControlLock in CUDTUnited::closeAllSockets.
+// As the other thread locks both as shared, this is no deadlock risk.
+bool srt::CRcvQueue::removeListener(CUDT* u)
+{
+    return m_pListener.compare_exchange(u, NULL);
 }
 
 void srt::CRcvQueue::registerConnector(const SRTSOCKET&                id,
@@ -1811,16 +1842,35 @@ void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
     }
 }
 
-void srt::CMultiplexer::destroy()
+void srt::CMultiplexer::resetAtFork()
 {
-    // Reverse order of the assigned.
-    delete m_pRcvQueue;
-    delete m_pSndQueue;
-    delete m_pTimer;
+    if (m_pRcvQueue != NULL)
+        m_pRcvQueue->resetAtFork();
+    if (m_pSndQueue != NULL)
+        m_pSndQueue->resetAtFork();
+}
 
+void srt::CMultiplexer::close()
+{
     if (m_pChannel)
     {
         m_pChannel->close();
         delete m_pChannel;
+        m_pChannel = NULL;
     }
+}
+
+void srt::CMultiplexer::stop()
+{
+    if (m_pRcvQueue != NULL)
+        m_pRcvQueue->stop();
+    if (m_pSndQueue != NULL)
+        m_pSndQueue->stop();
+}
+
+void srt::CMultiplexer::destroy()
+{
+    // Reverse order of the assigned.
+    stop();
+    close();
 }

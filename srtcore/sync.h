@@ -12,6 +12,7 @@
 #define INC_SRT_SYNC_H
 
 #include "platform_sys.h"
+#include "srt_attr_defs.h"
 
 #include <cstdlib>
 #include <limits>
@@ -21,6 +22,9 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#if HAVE_CXX17
+#include <shared_mutex>
+#endif
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
@@ -54,7 +58,6 @@
 
 #include "srt.h"
 #include "utilities.h"
-#include "srt_attr_defs.h"
 
 
 namespace srt
@@ -426,11 +429,11 @@ class Condition
 public:
     Condition();
     ~Condition();
-
 public:
     /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
     /// to avoud issues with static initialization of CV on windows.
     void init();
+    void reset();
     void destroy();
 
 public:
@@ -483,6 +486,7 @@ private:
 };
 
 inline void setupCond(Condition& cv, const char*) { cv.init(); }
+inline void resetCond(Condition& cv) { cv.reset(); }
 inline void releaseCond(Condition& cv) { cv.destroy(); }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -491,11 +495,15 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
+using SharedMutex = std::shared_mutex;
+#else
+
 /// Implementation of a read-write mutex. 
 /// This allows multiple readers at a time, or a single writer.
 /// TODO: The class can be improved if needed to give writer a preference
 /// by adding additional m_iWritersWaiting member variable (counter).
-/// TODO: The m_iCountRead could be made atomic to make unlok_shared() faster and lock-free.
+/// TODO: The m_iCountRead could be made atomic to make unlock_shared() faster and lock-free.
 class SharedMutex
 {
 public:
@@ -526,6 +534,16 @@ protected:
     int  m_iCountRead;
     bool m_bWriterLocked;
 };
+#endif
+
+inline void enterCS(SharedMutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m) { m.lock(); }
+
+inline bool tryEnterCS(SharedMutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_TRY_ACQUIRE(true, m) { return m.try_lock(); }
+
+inline void leaveCS(SharedMutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unlock(); }
+
+inline void setupMutex(SharedMutex&, const char*) {}
+inline void releaseMutex(SharedMutex&) {}
 
 /// A version of std::scoped_lock<std::shared_mutex> (or lock_guard for C++11).
 /// We could have used the srt::sync::ScopedLock making it a template-based class.
@@ -577,25 +595,20 @@ public:
     {
     }
 
-    bool set(T* pObj)
+    bool compare_exchange(T* expected, T* newobj)
     {
         ExclusiveLock lock(*this);
-        if (m_pObj)
+        if (m_pObj != expected)
             return false;
-        m_pObj = pObj;
+        m_pObj = newobj;
         return true;
     }
 
-    bool clearIf(const T* pObj)
+    T* get_locked(SharedLock& /*wholocked*/)
     {
-        ExclusiveLock lock(*this);
-        if (m_pObj != pObj)
-            return false;
-        m_pObj = NULL;
-        return true;
+        // XXX Here you can assert that `wholocked` locked *this.
+        return m_pObj;
     }
-
-    T* getPtrNoLock() const { return m_pObj; }
 
 private:
     T* m_pObj;
@@ -990,6 +1003,7 @@ public: // Internal
 
 private:
     pthread_t m_thread;
+    pid_t     m_pid;
 };
 
 template <class Stream>
@@ -1020,6 +1034,8 @@ namespace this_thread
 }
 
 #endif
+
+inline void resetThread(CThread* th) { (void)new (th) CThread; }
 
 /// StartThread function should be used to do CThread assignments:
 /// @code

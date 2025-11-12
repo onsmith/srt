@@ -10,7 +10,6 @@
 
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
-[![Quality Gate Status][sonarcloud-badge]][sonarcloud-project]
 [![codecov][codecov-badge]][codecov-project]
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
@@ -160,6 +159,7 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 - [RTMP vs. SRT: Comparing Latency and Maximum Bandwidth](https://www.haivision.com/resources/white-paper/srt-versus-rtmp/) White Paper.
 - [Documentation on GitHub](./docs#documentation-overview) with SRT API documents, features decsriptions, etc.
 - The SRT Protocol Internet Draft: [Datatracker](https://datatracker.ietf.org/doc/draft-sharabayko-srt/) | [Latest Version](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) | [Latest Working Copy](https://haivision.github.io/srt-rfc/draft-sharabayko-srt.html) | [GitHub Repo](https://github.com/Haivision/srt-rfc)
+- If you are curious about live streaming using SRT with QUIC datagrams as an alternative to UDP transport, take a look at the following [blog post](https://medium.com/innovation-labs-blog/live-streaming-using-srt-with-quic-datagrams-7896f7ce7bf3?source=friends_link&sk=d0a00e79861d89673e27a04260f279b5) on Medium.
 
 ## Build Instructions
 
@@ -223,11 +223,8 @@ By contributing code to the SRT project, you agree to license your contribution 
 [Vcpkg-package]: https://repology.org/project/srt/versions
 [Vcpkg-badge]: https://repology.org/badge/version-for-repo/vcpkg/srt.svg
 
-[ConanCenter-package]: https://repology.org/project/srt/versions
-[ConanCenter-badge]: https://repology.org/badge/version-for-repo/conancenter/srt.svg
-
-[sonarcloud-project]: https://sonarcloud.io/project/overview?id=srt
-[sonarcloud-badge]: https://sonarcloud.io/api/project_badges/measure?project=srt&metric=alert_status
+[ConanCenter-package]: https://conan.io/center/recipes/srt
+[ConanCenter-badge]: https://img.shields.io/conan/v/srt
 
 [codecov-project]: https://codecov.io/gh/haivision/srt
 [codecov-badge]: https://codecov.io/gh/haivision/srt/branch/master/graph/badge.svg

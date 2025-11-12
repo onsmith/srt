@@ -751,6 +751,9 @@ automatically created to handle the incoming connection on the listening socket
 (and is about to be returned by [`srt_accept`](#srt_accept)), but before the
 connection has been accepted.
 
+Note the callback must be set before starting listening,
+i.e. before `srt_listen` is called.
+
 **Arguments**:
 
 * `lsn`: Listening socket where you want to install the callback hook
@@ -1019,6 +1022,9 @@ function is not guaranteed to be called if the [`u`](#u) socket is set to blocki
 mode ([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) option set to true).
 It is guaranteed to be called when a socket is in non-blocking mode, or when you
 use a group.
+
+Note the callback must be set before starting the connection procedure,
+i.e. before `srt_connect`, `srt_connect_bind`, etc. is called.
 
 This function is mainly intended to be used with group connections. Note that even
 if you use a group connection in blocking mode, after the group is considered
@@ -2835,13 +2841,13 @@ associated with the last error. The system error is:
 const char* srt_strerror(int code, int errnoval);
 ```
 
-Returns a string message that represents a given SRT error code and possibly the
-`errno` value, if not 0.
+Returns a string message that represents a given SRT error code.
 
-**NOTE:** *This function isn't thread safe. It uses a static variable to hold the
-error description. There's no problem with using it in a multithreaded environment,
-as long as only one thread in the whole application calls this function at the
-moment*
+**NOTE:** *The `errnoval` parameter is ignored. This function's old version
+was intended to get both the SRT error description and system error description,
+but this requires resolution of the reentrancy problem and dynamic strings.
+For getting the error description for a system error, you need to use the
+`strerror` function or some of its reentrant version.*
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)

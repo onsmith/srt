@@ -789,12 +789,6 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
     v.push_back(val);
 }
 
-template <class Type1, class Type2>
-inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
-{
-    return std::pair<Type1&, Type2&>(var1, var2);
-}
-
 // This can be used in conjunction with Tie to simplify the code
 // in loops around a whole container:
 // list<string>::const_iterator it, end;
@@ -828,17 +822,14 @@ struct CallbackHolder
         // Test if the pointer is a pointer to function. Don't let
         // other type of pointers here.
 #if HAVE_CXX11
+        // NOTE: No poor-man's replacement can be done for C++03 because it's
+        // not possible to fake calling a function without calling it and no
+        // other operation can be done without extensive transformations on
+        // the Signature type, still in C++03 possible only on functions up to
+        // 2 arguments (callbacks in SRT usually have more).
         static_assert(std::is_function<Signature>::value, "CallbackHolder is for functions only!");
-#else
-        // This is a poor-man's replacement, which should in most compilers
-        // generate a warning, if `Signature` resolves to a value type.
-        // This would make an illegal pointer cast from a value to a function type.
-        // Casting function-to-function, however, should not. Unfortunately
-        // newer compilers disallow that, too (when a signature differs), but
-        // then they should better use the C++11 way, much more reliable and safer.
-        void* (*testfn)(void*) = (void*(*)(void*))f;
-        (void)(testfn);
 #endif
+
         opaque = o;
         fn = f;
     }
@@ -973,6 +964,16 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
     w_count = count;
     w_sum = sum;
     w_paracount = parasum;
+}
+
+template<class Type>
+inline Type Bounds(Type lower, Type value, Type upper)
+{
+    if (value < lower)
+        return lower;
+    if (value > upper)
+        return upper;
+    return value;
 }
 
 
@@ -1111,7 +1112,7 @@ struct MapProxy
     {
         typename std::map<KeyType, ValueType>::const_iterator p = find();
         if (p == mp.end())
-            return "";
+            return ValueType();
         return p->second;
     }
 

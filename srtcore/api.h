@@ -120,6 +120,7 @@ public:
     }
 
     ~CUDTSocket();
+    void resetAtFork();
 
     void construct();
 
@@ -263,6 +264,7 @@ public:
     /// release the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
     int cleanup();
+    int cleanupAtFork();
 
     /// Create a new UDT socket.
     /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
@@ -407,7 +409,7 @@ private:
     groups_t m_Groups;
 #endif
 
-    sync::Mutex m_GlobControlLock; // used to synchronize UDT API
+    sync::SharedMutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 
@@ -462,6 +464,10 @@ private:
 
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
+    bool startGarbageCollector();
+    void stopGarbageCollector();
+    void cleanupAllSockets();
+    void closeAllSockets();
 
 public:
     struct SocketKeeper
@@ -534,6 +540,7 @@ private:
 
 private:
     srt::sync::atomic<bool> m_bClosing;
+    sync::Mutex             m_GCStartLock;
     sync::Mutex             m_GCStopLock;
     sync::Condition         m_GCStopCond;
 
