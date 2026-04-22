@@ -216,6 +216,11 @@ public:
         core().m_bClosing = true;
     }
 
+    void setBreaking()
+    {
+        core().m_bBreaking = true;
+    }
+
     /// This does the same as setClosed, plus sets the m_bBroken to true.
     /// Such a socket can still be read from so that remaining data from
     /// the receiver buffer can be read, but no longer sends anything.
@@ -524,7 +529,7 @@ private:
     /// @brief Checks if channel configuration matches the socket configuration.
     /// @param cfgMuxer multiplexer configuration.
     /// @param cfgSocket socket configuration.
-    /// @return tru if configurations match, false otherwise.
+    /// @return true if configurations match, false otherwise.
     static bool channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSrtConfig& cfgSocket);
     static bool inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket);

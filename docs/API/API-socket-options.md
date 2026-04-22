@@ -1112,7 +1112,7 @@ For details, see [SRT Packet Filtering & FEC](../features/packet-filtering-and-f
 
 Sets the passphrase for encryption. This enables encryption on this party (or
 disables it, if an empty passphrase is passed). The password must be minimum
-10 and maximum 79 characters long.
+10 and maximum 80 characters long.
 
 The passphrase is the shared secret between the sender and the receiver. It is
 used to generate the Key Encrypting Key using [PBKDF2](http://en.wikipedia.org/wiki/PBKDF2)
@@ -1651,7 +1651,7 @@ will be able to retrieve this stream ID from the socket that is returned from
 `srt_accept` (for a connected socket with that stream ID). You usually use SET
 on the socket used for `srt_connect`, and GET on the socket retrieved from
 `srt_accept`. This string can be used completely free-form. However, it's highly
-recommended to follow the [SRT Access Control (Stream ID) Guidlines](../features/access-control.md).
+recommended to follow the [SRT Access Control (Stream ID) Guidelines](../features/access-control.md).
 
 - As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `srt::setstreamid` and `srt::getstreamid`.

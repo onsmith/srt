@@ -313,7 +313,7 @@ class CUDT
     typedef sync::AtomicClock<sync::steady_clock> atomic_time_point;
     typedef sync::AtomicDuration<sync::steady_clock> atomic_duration;
 
-private: // constructor and desctructor
+private: // constructor and destructor
     void construct();
     void clearData();
     CUDT(CUDTSocket* parent);
@@ -972,6 +972,7 @@ private:
     sync::atomic<bool> m_bConnected;             // Whether the connection is on or off
     sync::atomic<bool> m_bClosing;               // If the UDT entity is closing
     sync::atomic<bool> m_bShutdown;              // If the peer side has shutdown the connection
+    sync::atomic<bool> m_bBreaking;              // The flag that declares interrupt of the connecting process
     sync::atomic<bool> m_bBroken;                // If the connection has been broken
     sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
@@ -1224,10 +1225,10 @@ private: // Generation and processing of packets
     /// Forms and sends ACK packet
     /// @note Assumes @ctrlpkt already has a timestamp.
     ///
-    /// @param ctrlpkt  A control packet structure to fill. It must have a timestemp already set.
+    /// @param ctrlpkt  A control packet structure to fill. It must have a timestamp already set.
     /// @param size     Sends lite ACK if size is SEND_LITE_ACK, Full ACK otherwise
     ///
-    /// @returns the nmber of packets sent.
+    /// @returns the number of packets sent.
     int  sendCtrlAck(CPacket& ctrlpkt, int size);
     void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
 
